@@ -3,24 +3,24 @@
     <!-- <nav id="title-bar">
       <h3>{{ appName }}</h3>
     </nav> -->
-    <div class="auth-wrap">
-      <transition name="fade">
-        <section class="auth">
-          <img class="fever-logo" src="./assets/fever-fluid.png" alt="">
-          <div class="auth-panel" :class="{ 'logined': logined }">
-            <Input class="item" :disabled="logined" prefix="md-link />" placeholder="Fever API 授权URL" v-model="feverAuth.url" />
-            <Input class="item" :disabled="logined" prefix="ios-contact" placeholder="授权用户" v-model="feverAuth.user" />
-            <Input class="item" :disabled="logined" prefix="ios-lock" placeholder="授权密码" type="password" v-model="feverAuth.pass" />
-
-            <a class="btn-auth" href="javascript:;" @click="authHandle">
-              <Icon class="icon-in" type="md-log-in" />
-              <Icon class="icon-out" type="md-log-out" />
-            </a>
-          </div>
-        </section>
-      </transition>
-    </div>
     <template v-if="!logined">
+      <div class="auth-wrap">
+        <transition name="fade">
+          <section class="auth">
+            <img class="fever-logo" src="./assets/fever-fluid.png" alt="">
+            <div class="auth-panel" :class="{ 'logined': logined }">
+              <Input class="item" :disabled="logined" prefix="md-link />" placeholder="Fever API 授权URL" v-model="feverAuth.url" />
+              <Input class="item" :disabled="logined" prefix="ios-contact" placeholder="授权用户" v-model="feverAuth.user" />
+              <Input class="item" :disabled="logined" prefix="ios-lock" placeholder="授权密码" type="password" v-model="feverAuth.pass" />
+
+              <a class="btn-auth" href="javascript:;" @click="authHandle">
+                <Icon class="icon-in" type="md-log-in" />
+                <Icon class="icon-out" type="md-log-out" />
+              </a>
+            </div>
+          </section>
+        </transition>
+      </div>
       <div class="not-auth">
         <h1>请先授权fever api</h1>
       </div>
@@ -30,7 +30,14 @@
 </template>
 
 <script>
-import { auth } from './utils/api'
+import md5 from 'md5'
+import EventBus from './utils/bus'
+import { getDatabyKey } from './utils/db'
+import { fever } from './utils/api'
+import { mapMutations } from 'vuex'
+
+let apiKey = ''
+let feverUrl = ''
 
 export default {
   name: 'App',
@@ -45,14 +52,58 @@ export default {
       }
     }
   },
+  mounted () {
+    this.$Spin.show()
+    this.getFeverConfig()
+  },
   methods: {
+    ...mapMutations([
+      'setFeverUrl',
+      'setApiKey'
+    ]),
+    async getFeverConfig () {
+      await getDatabyKey('feverUrl').then(data => {
+        let { value = '' } = data || {}
+        feverUrl = value
+        this.setFeverUrl(feverUrl)
+        this.feverAuth.url = this.feverAuth.url || feverUrl
+      }).catch(err => {
+        console.log(err)
+      })
+
+      await getDatabyKey('apiKey').then(data => {
+        let { value = '' } = data || {}
+        apiKey = value
+        this.setApiKey(apiKey)
+        if (apiKey !== '') this.logined = true
+        else this.logined = false
+      }).catch(err => {
+        console.log(err)
+      })
+
+      EventBus.$on('auth-expired', data => {
+        this.logined = false
+        apiKey = ''
+      })
+      this.$Spin.hide()
+    },
     authHandle () {
       const { url = '', user = '', pass = '' } = this.feverAuth
       if (url === '' || user === '' || pass === '') {
         return false
       }
-      auth(url, user, pass).then(resp => {
-        console.log(resp)
+      const apiKey = md5(`${user}:${pass}`)
+      fever.auth(url, apiKey).then(data => {
+        if (+data.auth === 1) {
+          this.setApiKey(apiKey)
+          this.setFeverUrl(url)
+          this.logined = true
+        } else {
+          this.logined = false
+        }
+      }).catch(err => {
+        this.$Message.error('请求错误！')
+        console.error(err)
       })
     }
   }
@@ -91,7 +142,7 @@ html, body {
   margin: 0;
   padding: 0;
   width: 100%;
-  height: 100%;
+  height: 100vh;
   overflow: hidden;
 }
 
